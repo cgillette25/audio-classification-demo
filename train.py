@@ -10,16 +10,20 @@ from audio.features import LogMelSpec
 from audio.model import SimpleAudioCNN
 from audio.utils import set_seed
 
+
 def collate_fn(batch):
     x = torch.stack([b.x for b in batch], dim=0)
     y = torch.tensor([b.y for b in batch], dtype=torch.long)
     return x, y
 
+
 def main(cfg_path: str):
     cfg = yaml.safe_load(open(cfg_path, "r"))
 
     set_seed(cfg["train"]["seed"])
-    device = torch.device("cuda" if (cfg["train"]["device"] == "cuda" and torch.cuda.is_available()) else "cpu")
+    device = torch.device(
+        "cuda" if (cfg["train"]["device"] == "cuda" and torch.cuda.is_available()) else "cpu"
+    )
 
     feat = LogMelSpec(
         sample_rate=cfg["dataset"]["sample_rate"],
@@ -31,6 +35,7 @@ def main(cfg_path: str):
         f_max=cfg["features"]["f_max"],
     )
 
+    # Enable SpecAugment only for training
     train_ds = ESC50Dataset(
         root=cfg["dataset"]["root"],
         sample_rate=cfg["dataset"]["sample_rate"],
@@ -38,6 +43,7 @@ def main(cfg_path: str):
         features=feat,
         fold=cfg["train"]["fold"],
         split="train",
+        augment=True,
     )
     test_ds = ESC50Dataset(
         root=cfg["dataset"]["root"],
@@ -46,6 +52,7 @@ def main(cfg_path: str):
         features=feat,
         fold=cfg["train"]["fold"],
         split="test",
+        augment=False,
     )
 
     model = SimpleAudioCNN(n_classes=len(train_ds.labels), dropout=cfg["model"]["dropout"]).to(device)
@@ -55,7 +62,7 @@ def main(cfg_path: str):
         batch_size=cfg["train"]["batch_size"],
         shuffle=True,
         num_workers=cfg["train"]["num_workers"],
-        pin_memory=True,
+        pin_memory=(device.type == "cuda"),
         collate_fn=collate_fn,
     )
     test_loader = DataLoader(
@@ -63,11 +70,16 @@ def main(cfg_path: str):
         batch_size=cfg["train"]["batch_size"],
         shuffle=False,
         num_workers=cfg["train"]["num_workers"],
-        pin_memory=True,
+        pin_memory=(device.type == "cuda"),
         collate_fn=collate_fn,
     )
 
-    opt = torch.optim.AdamW(model.parameters(), lr=cfg["train"]["lr"], weight_decay=cfg["train"]["weight_decay"])
+    opt = torch.optim.AdamW(
+        model.parameters(),
+        lr=cfg["train"]["lr"],
+        weight_decay=cfg["train"]["weight_decay"],
+    )
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=cfg["train"]["epochs"])
     loss_fn = torch.nn.CrossEntropyLoss()
 
     scaler = torch.cuda.amp.GradScaler(enabled=bool(cfg["train"]["amp"]) and device.type == "cuda")
@@ -110,6 +122,10 @@ def main(cfg_path: str):
                 total += y.numel()
 
         test_acc = correct / total
+
+        # LR schedule step once per epoch
+        scheduler.step()
+
         history["train_loss"].append(train_loss)
         history["test_acc"].append(test_acc)
 
@@ -131,9 +147,12 @@ def main(cfg_path: str):
     # Save history for notebook plotting
     torch.save(history, out_dir / "history.pt")
 
+
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, default="configs/esc50.yaml")
     args = parser.parse_args()
     main(args.config)
+a
