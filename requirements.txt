@@ -1,0 +1,10 @@
+torch>=2.2
+torchaudio>=2.2
+numpy
+pandas
+scikit-learn
+matplotlib
+tqdm
+pyyaml
+gradio>=4.0
+soundfile
