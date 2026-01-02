@@ -3,5 +3,18 @@ __pycache__/
 *.pyc
 .ipynb_checkpoints/
 .DS_Store
-runs/
+
+# Data & artifacts
 data/
+runs/
+*.pt
+*.pth
+*.onnx
+*.wav
+*.mp3
+*.flac
+*.zip
+
+# OS/editor
+.vscode/
+.idea/
