@@ -1,0 +1,30 @@
+dataset:
+  name: esc50
+  root: ./data/ESC-50
+  sample_rate: 32000
+  clip_seconds: 5.0
+
+features:
+  n_mels: 128
+  n_fft: 1024
+  hop_length: 320
+  win_length: 1024
+  f_min: 20
+  f_max: 14000
+
+train:
+  batch_size: 64
+  epochs: 20
+  lr: 0.0008
+  weight_decay: 0.01
+  num_workers: 4
+  fold: 1          
+  seed: 42
+  amp: true
+  device: cuda
+  out_dir: ./runs/esc50_cnn
+  save_name: model.pt
+
+model:
+  type: cnn
+  dropout: 0.2
