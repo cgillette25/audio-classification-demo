@@ -28,11 +28,17 @@ class ESC50Dataset(torch.utils.data.Dataset):
         features: LogMelSpec,
         fold: int,
         split: str,  # "train" or "test"
+        augment: bool = False,
     ):
         self.root = Path(root)
         self.sample_rate = sample_rate
         self.clip_len = int(sample_rate * clip_seconds)
         self.features = features
+
+        # SpecAugment-style masks (applied on log-mel, train only)
+        self.augment = augment
+        self.time_mask = torchaudio.transforms.TimeMasking(time_mask_param=48)
+        self.freq_mask = torchaudio.transforms.FrequencyMasking(freq_mask_param=16)
 
         meta = pd.read_csv(self.root / "meta" / "esc50.csv")
         # ESC-50 uses 5 folds
@@ -61,14 +67,23 @@ class ESC50Dataset(torch.utils.data.Dataset):
         row = self.meta.iloc[idx]
         wav_path = self.root / "audio" / row["filename"]
 
-        waveform, sr = torchaudio.load(wav_path)  # waveform: (C, T)
+        waveform, sr = torchaudio.load(str(wav_path))  # waveform: (C, T)
         if waveform.shape[0] > 1:
             waveform = waveform.mean(dim=0, keepdim=True)  # mono
         waveform = self._ensure_sr(waveform, sr)
         waveform = pad_or_trim(waveform, self.clip_len)
 
         feat = self.features(waveform)  # (n_mels, time)
-        feat = (feat - feat.mean()) / (feat.std() + 1e-6)  # per-clip norm (simple baseline)
+
+        # Normalize per-mel bin across time
+        feat = (feat - feat.mean(dim=1, keepdim=True)) / (feat.std(dim=1, keepdim=True) + 1e-6)
+
+        # SpecAugment (train only)
+        if self.augment:
+            f = feat.unsqueeze(0)  # (1, n_mels, time)
+            f = self.time_mask(f)
+            f = self.freq_mask(f)
+            feat = f.squeeze(0)
 
         y = self.label_to_idx[row["category"]]
         return AudioExample(x=feat, y=y, path=str(wav_path))
