@@ -29,3 +29,42 @@ Audio classification is a core building block for:
 **ESC-50**: 2,000 environmental audio recordings across 50 classes, organized into 5 folds for cross-validation.
 
 Expected folder structure:
+data/ESC-50/
+audio/
+meta/esc50.csv
+
+
+## Method
+### Feature extraction (torchaudio)
+1. Resample to a fixed sample rate (default: 32 kHz)
+2. Convert to mono
+3. Pad/trim to a fixed clip duration (default: 5 seconds)
+4. Compute **mel spectrogram**
+5. Apply **log compression**
+6. Normalize per clip
+
+### Model
+A compact CNN operating on log-mel spectrograms:
+- Conv → BN → ReLU → Pool (repeated)
+- Global average pooling
+- Linear classification head
+
+This baseline is intentionally:
+- Fast for inference
+- Stable to train
+- Easy to deploy
+
+## Results
+After training, the evaluation script reports:
+- Accuracy
+- Macro F1
+- Per-class precision/recall/F1
+- Confusion matrix (saved for notebook visualization)
+
+## Run locally
+
+### 1) Install
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
