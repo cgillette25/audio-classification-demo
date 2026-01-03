@@ -37,8 +37,8 @@ class ESC50Dataset(torch.utils.data.Dataset):
 
         # SpecAugment-style masks (applied on log-mel, train only)
         self.augment = augment
-        self.time_mask = torchaudio.transforms.TimeMasking(time_mask_param=48)
-        self.freq_mask = torchaudio.transforms.FrequencyMasking(freq_mask_param=16)
+        self.time_mask = torchaudio.transforms.TimeMasking(time_mask_param=24)
+        self.freq_mask = torchaudio.transforms.FrequencyMasking(freq_mask_param=8)
 
         meta = pd.read_csv(self.root / "meta" / "esc50.csv")
         # ESC-50 uses 5 folds
@@ -80,10 +80,13 @@ class ESC50Dataset(torch.utils.data.Dataset):
 
         # SpecAugment (train only)
         if self.augment:
-            f = feat.unsqueeze(0)  # (1, n_mels, time)
-            f = self.time_mask(f)
-            f = self.freq_mask(f)
-            feat = f.squeeze(0)
+            # Apply SpecAugment with probability 0.5
+            if torch.rand(()) < 0.5:
+                f = feat.unsqueeze(0)  # (1, n_mels, time)
+                f = self.time_mask(f)
+                f = self.freq_mask(f)
+                feat = f.squeeze(0)
+
 
         y = self.label_to_idx[row["category"]]
         return AudioExample(x=feat, y=y, path=str(wav_path))
