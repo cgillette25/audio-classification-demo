@@ -76,7 +76,7 @@ class ESC50Dataset(torch.utils.data.Dataset):
         feat = self.features(waveform)  # (n_mels, time)
 
         # Normalize per-mel bin across time
-        feat = (feat - feat.mean(dim=1, keepdim=True)) / (feat.std(dim=1, keepdim=True) + 1e-6)
+        feat = (feat - feat.mean()) / (feat.std() + 1e-6)
 
         # SpecAugment (train only)
         if self.augment:
