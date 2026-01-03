@@ -43,7 +43,7 @@ def main(cfg_path: str):
         features=feat,
         fold=cfg["train"]["fold"],
         split="train",
-        augment=True,
+        augment=False,
     )
     test_ds = ESC50Dataset(
         root=cfg["dataset"]["root"],
