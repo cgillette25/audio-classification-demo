@@ -15,7 +15,7 @@ features:
 train:
   batch_size: 64
   epochs: 20
-  lr: 0.0008
+  lr: 0.001
   weight_decay: 0.01
   num_workers:  0
   fold: 1          
