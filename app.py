@@ -1,8 +1,9 @@
 import os
 from pathlib import Path
 from urllib.request import urlretrieve
-import torch
+
 import numpy as np
+import torch
 import gradio as gr
 import torchaudio
 
@@ -10,9 +11,14 @@ from audio.features import LogMelSpec
 from audio.model import SimpleAudioCNN
 from audio.utils import pad_or_trim
 
-# Load checkpoint
+# -----------------------------
+# Device
+# -----------------------------
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+# -----------------------------
+# Checkpoint download 
+# -----------------------------
 CKPT_PATH = Path("checkpoints/esc50_cnn.pt")
 CKPT_PATH.parent.mkdir(parents=True, exist_ok=True)
 
@@ -30,8 +36,9 @@ ckpt = torch.load(str(CKPT_PATH), map_location=DEVICE)
 cfg = ckpt["cfg"]
 LABELS = ckpt["labels"]
 
-
-# Rebuild feature pipeline
+# -----------------------------
+# Feature pipeline + model
+# -----------------------------
 feat = LogMelSpec(
     sample_rate=cfg["dataset"]["sample_rate"],
     n_fft=cfg["features"]["n_fft"],
@@ -47,10 +54,15 @@ model.load_state_dict(ckpt["model_state"])
 model.to(DEVICE)
 model.eval()
 
+# -----------------------------
+# Audio helpers
+# -----------------------------
 _resampler = None
 
-def to_mono_resample(waveform, sr, target_sr):
+def to_mono_resample(waveform: torch.Tensor, sr: int, target_sr: int) -> torch.Tensor:
     global _resampler
+    if waveform.dim() == 1:
+        waveform = waveform.unsqueeze(0)
     if waveform.shape[0] > 1:
         waveform = waveform.mean(dim=0, keepdim=True)
     if sr != target_sr:
@@ -59,13 +71,50 @@ def to_mono_resample(waveform, sr, target_sr):
         waveform = _resampler(waveform)
     return waveform
 
+def load_audio_from_gradio(audio_input):
+    """
+    Supports Gradio Audio in multiple formats:
+      - filepath (str)
+      - tuple: (sample_rate, numpy_array)
+      - dict: {"path": "..."} or {"sampling_rate": sr, "data": array}
+    Returns: waveform torch.Tensor shape (C, T), sr int
+    """
+    # filepath string
+    if isinstance(audio_input, str):
+        return torchaudio.load(audio_input)
 
-def predict(audio_file):
-    if audio_file is None:
-        return None, {}
+    # dict format
+    if isinstance(audio_input, dict):
+        if audio_input.get("path"):
+            return torchaudio.load(audio_input["path"])
+        if "data" in audio_input and "sampling_rate" in audio_input:
+            sr = int(audio_input["sampling_rate"])
+            data = np.asarray(audio_input["data"], dtype=np.float32)
+            # (T,) or (T, C) -> (C, T)
+            if data.ndim == 1:
+                data = data[:, None]
+            waveform = torch.from_numpy(data.T)
+            return waveform, sr
 
-    # gradio returns filepath
-    waveform, sr = torchaudio.load(audio_file)
+    # tuple(sr, data)
+    if isinstance(audio_input, tuple) and len(audio_input) == 2:
+        sr = int(audio_input[0])
+        data = np.asarray(audio_input[1], dtype=np.float32)
+        if data.ndim == 1:
+            data = data[:, None]
+        waveform = torch.from_numpy(data.T)
+        return waveform, sr
+
+    raise ValueError(f"Unsupported audio input type: {type(audio_input)}")
+
+# -----------------------------
+# Inference
+# -----------------------------
+def predict(audio_input):
+    if audio_input is None:
+        return None, {}, "No audio provided."
+
+    waveform, sr = load_audio_from_gradio(audio_input)
     waveform = to_mono_resample(waveform, sr, cfg["dataset"]["sample_rate"])
 
     clip_len = int(cfg["dataset"]["sample_rate"] * cfg["dataset"]["clip_seconds"])
@@ -83,23 +132,31 @@ def predict(audio_file):
     topk = probs.argsort()[::-1][:5]
     pred_label = LABELS[int(topk[0])]
 
-    # Return spectrogram as image-like array for display (normalize 0..1)
+    # Return spectrogram array for display (normalize 0..1)
     spec = m.cpu().numpy()
     spec_norm = (spec - spec.min()) / (spec.max() - spec.min() + 1e-9)
 
     conf = {LABELS[i]: float(probs[i]) for i in topk}
-    return spec_norm, conf
+    return spec_norm, conf, f"Prediction: {pred_label}"
 
+# -----------------------------
+# UI
+# -----------------------------
 demo = gr.Interface(
     fn=predict,
-    inputs=gr.Audio(type="filepath", label="Upload an audio clip (wav/mp3)"),
+    inputs=gr.Audio(
+        sources=["upload", "microphone"],
+        type="numpy",
+        label="Upload or record audio",
+    ),
     outputs=[
         gr.Image(label="Log-Mel Spectrogram", type="numpy"),
         gr.Label(label="Top Predictions"),
+        gr.Textbox(label="Predicted Class"),
     ],
     title="Audio Classification Demo (ESC-50) — Log-Mel + CNN",
     description=(
-        "Upload a clip to classify environmental sounds. "
+        "Upload or record a short clip to classify environmental sounds. "
         "This demo uses a log-mel spectrogram frontend (torchaudio) and a CNN trained on ESC-50."
     ),
     allow_flagging="never",
@@ -107,4 +164,3 @@ demo = gr.Interface(
 
 if __name__ == "__main__":
     demo.launch(server_name="0.0.0.0", server_port=7860)
-
