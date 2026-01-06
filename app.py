@@ -1,3 +1,6 @@
+import os
+from pathlib import Path
+from urllib.request import urlretrieve
 import torch
 import numpy as np
 import gradio as gr
@@ -7,13 +10,26 @@ from audio.features import LogMelSpec
 from audio.model import SimpleAudioCNN
 from audio.utils import pad_or_trim
 
+# Load checkpoint
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Load checkpoint
-CKPT_PATH = "assets/checkpoints/esc50_cnn.pt"
-ckpt = torch.load(CKPT_PATH, map_location="cpu")
+CKPT_PATH = Path("checkpoints/esc50_cnn.pt")
+CKPT_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+MODEL_URL = "https://raw.githubusercontent.com/cgillette25/audio-classification-demo/main/assets/checkpoints/esc50_cnn.pt"
+
+def ensure_checkpoint():
+    if CKPT_PATH.exists():
+        return
+    print(f"Downloading checkpoint from {MODEL_URL}")
+    urlretrieve(MODEL_URL, CKPT_PATH)
+
+ensure_checkpoint()
+
+ckpt = torch.load(str(CKPT_PATH), map_location=DEVICE)
 cfg = ckpt["cfg"]
 LABELS = ckpt["labels"]
+
 
 # Rebuild feature pipeline
 feat = LogMelSpec(
@@ -31,13 +47,18 @@ model.load_state_dict(ckpt["model_state"])
 model.to(DEVICE)
 model.eval()
 
+_resampler = None
+
 def to_mono_resample(waveform, sr, target_sr):
+    global _resampler
     if waveform.shape[0] > 1:
         waveform = waveform.mean(dim=0, keepdim=True)
     if sr != target_sr:
-        resampler = torchaudio.transforms.Resample(sr, target_sr)
-        waveform = resampler(waveform)
+        if _resampler is None or _resampler.orig_freq != sr:
+            _resampler = torchaudio.transforms.Resample(sr, target_sr)
+        waveform = _resampler(waveform)
     return waveform
+
 
 def predict(audio_file):
     if audio_file is None:
@@ -85,4 +106,5 @@ demo = gr.Interface(
 )
 
 if __name__ == "__main__":
-    demo.launch()
+    demo.launch(server_name="0.0.0.0", server_port=7860)
+
