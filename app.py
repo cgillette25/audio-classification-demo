@@ -10,7 +10,7 @@ from audio.utils import pad_or_trim
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Load checkpoint
-CKPT_PATH = "runs/esc50_cnn/model.pt"  # adjust if needed
+CKPT_PATH = "assets/checkpoints/esc50_cnn.pt"
 ckpt = torch.load(CKPT_PATH, map_location="cpu")
 cfg = ckpt["cfg"]
 LABELS = ckpt["labels"]

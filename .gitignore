@@ -8,6 +8,7 @@ __pycache__/
 data/
 runs/
 *.pt
+!assets/**/*.pt
 *.pth
 *.onnx
 *.wav
